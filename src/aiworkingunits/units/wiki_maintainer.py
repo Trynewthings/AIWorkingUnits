@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -95,7 +95,7 @@ class WikiMaintainer(WorkingUnit):
         }
 
     async def _query(self, question: str, config: dict[str, Any]) -> str:
-        index = self._read_index()
+        index = await asyncio.to_thread(self._read_index)
         prompt = (
             "You are a wiki librarian. Use the index below to answer the question."
             " Cite pages by their relative path.\n\n"
@@ -118,8 +118,10 @@ class WikiMaintainer(WorkingUnit):
         return graph.compile()
 
     async def _node_load_context(self, state: WikiState) -> dict[str, Any]:
-        schema = self._read_text(self.config.schema_path)
-        index = self._read_index()
+        def _read() -> tuple[str, str]:
+            return self._read_text(self.config.schema_path), self._read_index()
+
+        schema, index = await asyncio.to_thread(_read)
         return {"schema_doc": schema, "index_doc": index}
 
     async def _node_plan(self, state: WikiState) -> dict[str, Any]:
@@ -148,6 +150,10 @@ class WikiMaintainer(WorkingUnit):
 
     async def _node_apply(self, state: WikiState) -> dict[str, Any]:
         plan: IngestPlan = state["plan"]
+        applied = await asyncio.to_thread(self._apply_sync, plan)
+        return {"applied": applied}
+
+    def _apply_sync(self, plan: IngestPlan) -> list[str]:
         applied: list[str] = []
         for upd in plan.page_updates:
             rel = upd.path.lstrip("/")
@@ -164,9 +170,13 @@ class WikiMaintainer(WorkingUnit):
             else:
                 target.write_text(upd.content.strip() + "\n", encoding="utf-8")
             applied.append(rel)
-        return {"applied": applied}
+        return applied
 
     async def _node_index_and_log(self, state: WikiState) -> dict[str, Any]:
+        await asyncio.to_thread(self._index_and_log_sync, state)
+        return {}
+
+    def _index_and_log_sync(self, state: WikiState) -> None:
         applied = state.get("applied", [])
         title = state.get("source_title", "")
         plan = state.get("plan")
@@ -184,7 +194,6 @@ class WikiMaintainer(WorkingUnit):
         log_path.write_text(existing.rstrip() + "\n\n" + entry, encoding="utf-8")
 
         self._rebuild_index()
-        return {}
 
     def _rebuild_index(self) -> None:
         index_path = self.config.wiki_dir / "index.md"
