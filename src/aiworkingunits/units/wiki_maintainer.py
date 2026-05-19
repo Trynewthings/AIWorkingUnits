@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field, field_validator
@@ -20,10 +21,27 @@ from aiworkingunits.unit import UnitConfig, WorkingUnit
 logger = logging.getLogger(__name__)
 
 
+LLMProvider = Literal["anthropic", "openai", "deepseek"]
+StructuredMethod = Literal["function_calling", "json_mode", "json_schema"]
+
+_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+    "anthropic": {"key_env": "ANTHROPIC_API_KEY"},
+    "openai": {"key_env": "OPENAI_API_KEY", "base_url": "https://api.openai.com/v1"},
+    "deepseek": {"key_env": "DEEPSEEK_API_KEY", "base_url": "https://api.deepseek.com"},
+}
+
+
 class WikiMaintainerConfig(UnitConfig):
     wiki_dir: Path = Path("wiki")
     schema_path: Path = Path("schemas/book_wiki.md")
     max_pages_per_ingest: int = 15
+
+    # LLM provider config. The base UnitConfig.model field is used as the query
+    # model; plan_model (if set) is used for the more demanding ingest plan.
+    llm_provider: LLMProvider = "deepseek"
+    llm_base_url: str | None = None
+    structured_output_method: StructuredMethod = "json_mode"
+    plan_model: str | None = None
 
 
 class PageUpdate(BaseModel):
@@ -88,12 +106,37 @@ class WikiMaintainer(WorkingUnit):
     def __init__(self, config: WikiMaintainerConfig, bus: Any) -> None:
         super().__init__(config, bus)
         self.config.wiki_dir.mkdir(parents=True, exist_ok=True)
-        self._llm = ChatAnthropic(
-            model=config.model,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-        )
+        self._llm_query = self._build_llm(config.model)
+        self._llm_plan = self._build_llm(config.plan_model) if config.plan_model else self._llm_query
         self._graph = self._build_graph()
+
+    def _build_llm(self, model: str) -> BaseChatModel:
+        provider = self.config.llm_provider
+        if provider == "anthropic":
+            from langchain_anthropic import ChatAnthropic
+
+            return ChatAnthropic(
+                model=model,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
+        if provider in {"openai", "deepseek"}:
+            from langchain_openai import ChatOpenAI
+
+            defaults = _PROVIDER_DEFAULTS[provider]
+            base_url = self.config.llm_base_url or defaults["base_url"]
+            # Key may be absent at module-import time (e.g., when LangGraph Studio
+            # loads the graph factory before .env is loaded). Defer the auth
+            # failure to the actual API call rather than blocking construction.
+            api_key = os.environ.get(defaults["key_env"], "__missing__")
+            return ChatOpenAI(
+                model=model,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+                base_url=base_url,
+                api_key=api_key,
+            )
+        raise ValueError(f"unsupported llm_provider: {provider}")
 
     async def handle(self, msg: Message) -> Message | None:
         if msg.type != MessageType.REQUEST:
@@ -128,7 +171,7 @@ class WikiMaintainer(WorkingUnit):
             " Cite pages by their relative path.\n\n"
             f"# Wiki Index\n{index}\n\n# Question\n{question}"
         )
-        result = await self._llm.ainvoke([HumanMessage(content=prompt)], config=config)
+        result = await self._llm_query.ainvoke([HumanMessage(content=prompt)], config=config)
         return str(result.content)
 
     def _build_graph(self) -> Any:
@@ -176,9 +219,12 @@ class WikiMaintainer(WorkingUnit):
                 f"## Source content\n{state.get('source_content','')[:60000]}"
             )
         )
-        # json_schema mode skips tool use entirely; the model emits JSON directly,
-        # which avoids the nested-stringification failure mode that tool-call args hit.
-        structured = self._llm.with_structured_output(IngestPlan, method="json_schema", include_raw=True)
+        # Configured method per provider. json_schema is strictest (where supported);
+        # json_mode is the OpenAI-compatible fallback that DeepSeek supports. Either
+        # way, our Pydantic validator + dirtyjson + retry layer catches the rest.
+        structured = self._llm_plan.with_structured_output(
+            IngestPlan, method=self.config.structured_output_method, include_raw=True
+        )
         result = await structured.ainvoke([system, user])
         plan = _extract_plan(result)
         if plan is not None:
@@ -311,7 +357,10 @@ def make_maintainer(
     unit_id: str = "wiki_maintainer",
     wiki_dir: Path | str = "wiki",
     schema_path: Path | str = "schemas/book_wiki.md",
-    model: str = "claude-sonnet-4-6",
+    model: str = "deepseek-v4-flash",
+    plan_model: str | None = "deepseek-v4-pro",
+    llm_provider: LLMProvider = "deepseek",
+    structured_output_method: StructuredMethod = "json_mode",
 ) -> WikiMaintainer:
     cfg = WikiMaintainerConfig(
         unit_id=unit_id,
@@ -319,6 +368,9 @@ def make_maintainer(
         wiki_dir=Path(wiki_dir),
         schema_path=Path(schema_path),
         model=model,
+        plan_model=plan_model,
+        llm_provider=llm_provider,
+        structured_output_method=structured_output_method,
     )
     return WikiMaintainer(cfg, bus)
 

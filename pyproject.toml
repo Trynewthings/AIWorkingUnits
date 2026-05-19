@@ -11,6 +11,7 @@ dependencies = [
     "langgraph>=0.2.50",
     "langchain-core>=0.3.20",
     "langchain-anthropic>=0.3.0",
+    "langchain-openai>=0.2.10",
     "langsmith>=0.1.140",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
