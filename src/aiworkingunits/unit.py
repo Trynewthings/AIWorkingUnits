@@ -23,7 +23,7 @@ class UnitConfig(BaseModel):
 
     unit_id: str
     capabilities: list[str] = Field(default_factory=list)
-    model: str = "claude-sonnet-4-5"
+    model: str = "claude-sonnet-4-6"
     temperature: float = 0.2
     max_tokens: int = 4096
     request_timeout_s: float = 60.0

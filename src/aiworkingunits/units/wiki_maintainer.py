@@ -222,7 +222,7 @@ def make_maintainer(
     unit_id: str = "wiki_maintainer",
     wiki_dir: Path | str = "wiki",
     schema_path: Path | str = "schemas/book_wiki.md",
-    model: str = "claude-sonnet-4-5",
+    model: str = "claude-sonnet-4-6",
 ) -> WikiMaintainer:
     cfg = WikiMaintainerConfig(
         unit_id=unit_id,

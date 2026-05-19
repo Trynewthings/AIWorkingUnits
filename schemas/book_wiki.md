@@ -64,8 +64,14 @@ When a new source arrives:
 - When a new source contradicts an older claim, do NOT overwrite — add a `## Contradictions` section noting both sides with citations.
 - Cap each ingest at 15 page updates; pick the most important ones.
 
-## Domain hint (edit me)
+## Domain hint
 
-> The current book is: **(set this when the PDF is uploaded)**.
-> Genre: **(fiction | non-fiction | technical)**.
-> Emphasize: **(plot/characters | arguments/evidence | concepts/definitions)**.
+> The current book is: **Mediator Guide to Careers** — a career guide for the INFP ("Mediator") personality type.
+> Genre: **non-fiction / self-help**.
+> Emphasize: **arguments/evidence | concepts/definitions** (career paths, INFP-specific strengths/weaknesses, recommended fields, decision frameworks). Treat the INFP type itself as the central "entity" the wiki revolves around.
+>
+> Special instructions for this domain:
+> - Replace `chapters/` with `parts/<slug>.md` for the book's major sections.
+> - Use `entities/` for: career fields, role archetypes, notable people/companies mentioned.
+> - Use `concepts/` for: personality traits, decision frameworks, common pitfalls.
+> - `overview.md` should track the book's overall advice arc and any contradictions or trade-offs surfaced.
