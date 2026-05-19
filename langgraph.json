@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "wiki_maintainer": "./src/aiworkingunits/units/wiki_maintainer.py:graph"
+  },
+  "env": ".env"
+}

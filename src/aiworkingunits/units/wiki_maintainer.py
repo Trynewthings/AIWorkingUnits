@@ -13,6 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
 from aiworkingunits.messages import Message, MessageType
+from aiworkingunits.observability import run_config_from_message
 from aiworkingunits.unit import UnitConfig, WorkingUnit
 
 logger = logging.getLogger(__name__)
@@ -72,33 +73,35 @@ class WikiMaintainer(WorkingUnit):
             return None
         cap = msg.capability or msg.payload.get("op")
         if cap == "wiki.ingest":
-            result = await self._ingest(msg.payload)
+            config = run_config_from_message(msg, unit_id=self.unit_id, run_name=f"{self.unit_id}.ingest")
+            result = await self._ingest(msg.payload, config)
             return msg.reply(payload=result, sender=self.unit_id)
         if cap == "wiki.query":
-            answer = await self._query(msg.payload.get("question", ""))
+            config = run_config_from_message(msg, unit_id=self.unit_id, run_name=f"{self.unit_id}.query")
+            answer = await self._query(msg.payload.get("question", ""), config)
             return msg.reply(payload={"answer": answer}, sender=self.unit_id)
         return None
 
-    async def _ingest(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _ingest(self, payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         state: WikiState = {
             "source_path": payload.get("source_path", ""),
             "source_title": payload.get("title", ""),
             "source_content": payload.get("content", ""),
         }
-        final_state = await self._graph.ainvoke(state)
+        final_state = await self._graph.ainvoke(state, config=config)
         return {
             "applied_pages": final_state.get("applied", []),
             "summary": final_state.get("plan").source_summary if final_state.get("plan") else "",
         }
 
-    async def _query(self, question: str) -> str:
+    async def _query(self, question: str, config: dict[str, Any]) -> str:
         index = self._read_index()
         prompt = (
             "You are a wiki librarian. Use the index below to answer the question."
             " Cite pages by their relative path.\n\n"
             f"# Wiki Index\n{index}\n\n# Question\n{question}"
         )
-        result = await self._llm.ainvoke([HumanMessage(content=prompt)])
+        result = await self._llm.ainvoke([HumanMessage(content=prompt)], config=config)
         return str(result.content)
 
     def _build_graph(self) -> Any:
@@ -232,3 +235,21 @@ def make_maintainer(
         model=model,
     )
     return WikiMaintainer(cfg, bus)
+
+
+# Module-level compiled graph exposed for LangGraph Studio (langgraph.json).
+# Studio invokes this graph directly with a WikiState dict (no bus); it works
+# but skips the cross-unit message correlation that the WorkingUnit wrapper
+# provides. Use Studio for graph-internal debugging, LangSmith for cross-unit.
+def _build_studio_graph() -> Any:
+    from aiworkingunits.bus import AsyncMessageBus  # noqa: WPS433 — avoid import cycle at top
+
+    repo_root = Path(__file__).resolve().parents[3]
+    return make_maintainer(
+        AsyncMessageBus(),
+        wiki_dir=repo_root / "wiki",
+        schema_path=repo_root / "schemas" / "book_wiki.md",
+    )._graph
+
+
+graph = _build_studio_graph()
