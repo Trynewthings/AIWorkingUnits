@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,7 @@ class SourceFetcher(WorkingUnit):
         if not path.exists():
             raise FileNotFoundError(f"source not found: {path}")
 
-        content, fmt = self._load(path)
+        content, fmt = await asyncio.to_thread(self._load, path)
         title = self._derive_title(path, content)
 
         return msg.reply(

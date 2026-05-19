@@ -25,7 +25,7 @@ class UnitConfig(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     model: str = "claude-sonnet-4-6"
     temperature: float = 0.2
-    max_tokens: int = 4096
+    max_tokens: int = 16384
     request_timeout_s: float = 60.0
 
 

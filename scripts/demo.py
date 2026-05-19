@@ -58,7 +58,9 @@ async def main() -> None:
         logger.info("step 1: requesting source.fetch from %s", fetcher.unit_id)
         fetched = await maintainer.request(
             receiver=fetcher.unit_id,
+            capability="source.fetch",
             payload={"path": source_name},
+            timeout=300.0,
         )
         logger.info("fetched title=%r bytes=%d", fetched.payload.get("title"), len(fetched.payload.get("content", "")))
 
