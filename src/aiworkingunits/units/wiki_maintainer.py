@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any, Literal, TypedDict
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from aiworkingunits.messages import Message, MessageType
 from aiworkingunits.observability import run_config_from_message
@@ -35,6 +36,16 @@ class PageUpdate(BaseModel):
 class IngestPlan(BaseModel):
     source_summary: str = Field(description="A 2-4 sentence summary of the source")
     page_updates: list[PageUpdate] = Field(description="Wiki page changes to apply for this source")
+
+    # Claude with structured output occasionally emits the list as a JSON-encoded
+    # string instead of a proper array (especially for nested object lists).
+    # Coerce it back here so we do not lose a 90-second LLM call to a stringification quirk.
+    @field_validator("page_updates", mode="before")
+    @classmethod
+    def _coerce_json_string(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
 
 
 class WikiState(TypedDict, total=False):
