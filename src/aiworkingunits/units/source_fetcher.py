@@ -39,12 +39,9 @@ class SourceFetcher(WorkingUnit):
         if not path_str:
             raise ValueError("payload.path is required")
 
-        path = Path(path_str)
-        if not path.is_absolute():
-            path = (self.config.raw_dir / path).resolve()
+        from aiworkingunits.units.source_splitter import _resolve_source_path
 
-        if not path.exists():
-            raise FileNotFoundError(f"source not found: {path}")
+        path = _resolve_source_path(path_str, self.config.raw_dir)
 
         content, fmt = await asyncio.to_thread(self._load, path)
         title = self._derive_title(path, content)

@@ -12,7 +12,7 @@ from typing import Any, Literal, TypedDict
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from aiworkingunits.messages import Message, MessageType
 from aiworkingunits.observability import run_config_from_message
@@ -40,20 +40,67 @@ class WikiMaintainerConfig(UnitConfig):
     # model; plan_model (if set) is used for the more demanding ingest plan.
     llm_provider: LLMProvider = "deepseek"
     llm_base_url: str | None = None
-    structured_output_method: StructuredMethod = "json_mode"
+    structured_output_method: StructuredMethod = "function_calling"
     plan_model: str | None = None
 
 
 class PageUpdate(BaseModel):
     path: str = Field(description="Path of the wiki page relative to wiki_dir, e.g. 'entities/alice.md'")
-    action: Literal["create", "update", "append"] = Field(description="create new page, full update, or append section")
     content: str = Field(description="Full markdown content (for create/update) or section to append")
-    rationale: str = Field(description="One sentence explaining why this change")
+    action: Literal["create", "update", "append"] = Field(
+        default="create",
+        description="create new page, full update, or append section",
+    )
+    rationale: str = Field(default="", description="One sentence explaining why this change")
 
 
 class IngestPlan(BaseModel):
-    source_summary: str = Field(description="A 2-4 sentence summary of the source")
-    page_updates: list[PageUpdate] = Field(description="Wiki page changes to apply for this source")
+    synopsis: str = Field(
+        description=(
+            "A short (2-4 sentence) plain-text synopsis of THIS ingest for the log."
+            " This is NOT a wiki page. Do not put markdown, headings, or page objects here."
+            " Wiki page content always goes inside page_updates."
+        )
+    )
+    page_updates: list[PageUpdate] = Field(
+        description=(
+            "Wiki page changes to apply for this source, including the source summary page"
+            " (which lives at sources/<slug>.md inside page_updates, NOT in the synopsis field)."
+        )
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _recover_misplaced_fields(cls, data: Any) -> Any:
+        """Defenses against common DeepSeek/Claude shape errors:
+
+        - source_summary as a legacy field name → rename to synopsis
+        - synopsis as a PageUpdate-shaped dict → move it into page_updates and
+          derive a plain string synopsis from its content
+        """
+        if not isinstance(data, dict):
+            return data
+        if "synopsis" not in data and "source_summary" in data:
+            data["synopsis"] = data.pop("source_summary")
+        syn = data.get("synopsis")
+        if isinstance(syn, dict) and "content" in syn and "path" in syn:
+            page_updates = list(data.get("page_updates") or [])
+            misplaced = dict(syn)
+            misplaced.setdefault("action", "create")
+            misplaced.setdefault("rationale", "auto-recovered from synopsis field")
+            page_updates.insert(0, misplaced)
+            data["page_updates"] = page_updates
+            content = str(syn.get("content", ""))
+            derived = next(
+                (
+                    ln.strip()
+                    for ln in content.splitlines()
+                    if ln.strip() and not ln.lstrip().startswith(("#", "-", "*", ">", "|"))
+                ),
+                "Source ingested (synopsis auto-derived from page content).",
+            )
+            data["synopsis"] = derived[:400]
+        return data
 
     # Claude with structured output sometimes emits the list as a JSON-encoded
     # string and sometimes that string has unescaped quotes / backslashes inside
@@ -161,7 +208,7 @@ class WikiMaintainer(WorkingUnit):
         final_state = await self._graph.ainvoke(state, config=config)
         return {
             "applied_pages": final_state.get("applied", []),
-            "summary": final_state.get("plan").source_summary if final_state.get("plan") else "",
+            "summary": final_state.get("plan").synopsis if final_state.get("plan") else "",
         }
 
     async def _query(self, question: str, config: dict[str, Any]) -> str:
@@ -199,15 +246,21 @@ class WikiMaintainer(WorkingUnit):
             content=(
                 "You are the maintainer of a personal wiki built from sources."
                 " You are given the wiki schema, the current index, and a new source."
-                " Produce a plan of page updates that integrates the source into the wiki."
+                " Produce a plan that integrates the source into the wiki."
                 " Update existing pages when possible; create new pages when needed."
-                f" Limit yourself to at most {self.config.max_pages_per_ingest} page updates."
-                " Always include a source summary page under sources/.\n\n"
-                "CRITICAL FORMAT RULES:\n"
-                "- `page_updates` MUST be a JSON array of objects, NEVER a string containing JSON.\n"
-                "- Inside each `content` field, write plain markdown with real newlines."
-                " Do not pre-escape newlines, quotes, or backslashes — the tool layer escapes them for you.\n"
-                "- Keep each `content` field self-contained markdown for that single page."
+                f" Limit yourself to at most {self.config.max_pages_per_ingest} page updates.\n\n"
+                "OUTPUT SHAPE (be exact, this is the most common failure point):\n"
+                "- `synopsis`: a short PLAIN-TEXT string (2-4 sentences) summarizing"
+                " what this ingest does. NOT a markdown page. NOT a page object."
+                " It goes into the log so humans can skim what happened.\n"
+                "- `page_updates`: a JSON ARRAY of page-update objects (never a string)."
+                " Every entry MUST have `path`, `content`, `action`, `rationale`.\n"
+                "- One of the page_updates MUST be the source summary page at"
+                " `sources/<slug>.md` — that page lives inside page_updates,"
+                " NOT in the synopsis field.\n\n"
+                "Inside each `content` field, write plain markdown with real newlines."
+                " Do not pre-escape newlines, quotes, or backslashes — the tool layer"
+                " escapes them for you. Keep each `content` self-contained for one page."
             )
         )
         user = HumanMessage(
@@ -303,7 +356,7 @@ class WikiMaintainer(WorkingUnit):
         applied = state.get("applied", [])
         title = state.get("source_title", "")
         plan = state.get("plan")
-        summary = plan.source_summary if plan else ""
+        summary = plan.synopsis if plan else ""
 
         log_path = self.config.wiki_dir / "log.md"
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")

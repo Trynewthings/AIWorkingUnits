@@ -11,6 +11,32 @@ from aiworkingunits.unit import UnitConfig, WorkingUnit
 logger = logging.getLogger(__name__)
 
 
+def _resolve_source_path(path_str: str, raw_dir: Path) -> Path:
+    """Resolve a user-supplied path against raw_dir, tolerating either form.
+
+    Both 'foo.pdf' and 'raw/foo.pdf' work when raw_dir is 'raw'. Absolute
+    paths are accepted as-is. Raises FileNotFoundError with both attempts
+    in the message if neither resolves.
+    """
+    path = Path(path_str)
+    if path.is_absolute():
+        if path.exists():
+            return path
+        raise FileNotFoundError(f"source not found: {path}")
+    direct = (raw_dir / path).resolve()
+    if direct.exists():
+        return direct
+    parts = path.parts
+    if parts and parts[0] == raw_dir.name:
+        stripped = (raw_dir / Path(*parts[1:])).resolve()
+        if stripped.exists():
+            return stripped
+    cwd_relative = path.resolve()
+    if cwd_relative.exists():
+        return cwd_relative
+    raise FileNotFoundError(f"source not found: tried {direct} and {path.resolve()}")
+
+
 class SourceSplitterConfig(UnitConfig):
     raw_dir: Path = Path("raw")
     min_chapter_chars: int = 500
@@ -52,11 +78,7 @@ class SourceSplitter(WorkingUnit):
         path_str = msg.payload.get("path")
         if not path_str:
             raise ValueError("payload.path is required")
-        path = Path(path_str)
-        if not path.is_absolute():
-            path = (self.config.raw_dir / path).resolve()
-        if not path.exists():
-            raise FileNotFoundError(f"source not found: {path}")
+        path = _resolve_source_path(path_str, self.config.raw_dir)
 
         chapters, strategy = await asyncio.to_thread(self._split, path)
         return msg.reply(
