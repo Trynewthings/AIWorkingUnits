@@ -24,3 +24,4 @@
 
 ## sources
 - [Source: Mediator Guide to Careers](sources/mediator-guide-to-careers.md)
+- [Source: Sample Chapter — The Locked Door](sources/sample-the-locked-door.md)

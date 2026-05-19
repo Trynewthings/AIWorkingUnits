@@ -37,15 +37,21 @@ class IngestPlan(BaseModel):
     source_summary: str = Field(description="A 2-4 sentence summary of the source")
     page_updates: list[PageUpdate] = Field(description="Wiki page changes to apply for this source")
 
-    # Claude with structured output occasionally emits the list as a JSON-encoded
-    # string instead of a proper array (especially for nested object lists).
-    # Coerce it back here so we do not lose a 90-second LLM call to a stringification quirk.
+    # Claude with structured output sometimes emits the list as a JSON-encoded
+    # string and sometimes that string has unescaped quotes / backslashes inside
+    # long markdown content. Try strict json first, then dirtyjson which tolerates
+    # the common LLM JSON sins (unescaped quotes, trailing commas, raw newlines).
     @field_validator("page_updates", mode="before")
     @classmethod
     def _coerce_json_string(cls, v: Any) -> Any:
-        if isinstance(v, str):
+        if not isinstance(v, str):
+            return v
+        try:
             return json.loads(v)
-        return v
+        except json.JSONDecodeError:
+            import dirtyjson
+
+            return list(dirtyjson.loads(v))
 
 
 class WikiState(TypedDict, total=False):
@@ -56,6 +62,16 @@ class WikiState(TypedDict, total=False):
     index_doc: str
     plan: IngestPlan
     applied: list[str]
+
+
+def _extract_plan(result: Any) -> IngestPlan | None:
+    if isinstance(result, IngestPlan):
+        return result
+    if isinstance(result, dict):
+        parsed = result.get("parsed")
+        if isinstance(parsed, IngestPlan):
+            return parsed
+    return None
 
 
 class WikiMaintainer(WorkingUnit):
@@ -140,10 +156,15 @@ class WikiMaintainer(WorkingUnit):
             content=(
                 "You are the maintainer of a personal wiki built from sources."
                 " You are given the wiki schema, the current index, and a new source."
-                " Produce a JSON plan of page updates that integrates the source into the wiki."
+                " Produce a plan of page updates that integrates the source into the wiki."
                 " Update existing pages when possible; create new pages when needed."
                 f" Limit yourself to at most {self.config.max_pages_per_ingest} page updates."
-                " Always include a source summary page under sources/."
+                " Always include a source summary page under sources/.\n\n"
+                "CRITICAL FORMAT RULES:\n"
+                "- `page_updates` MUST be a JSON array of objects, NEVER a string containing JSON.\n"
+                "- Inside each `content` field, write plain markdown with real newlines."
+                " Do not pre-escape newlines, quotes, or backslashes — the tool layer escapes them for you.\n"
+                "- Keep each `content` field self-contained markdown for that single page."
             )
         )
         user = HumanMessage(
@@ -155,9 +176,51 @@ class WikiMaintainer(WorkingUnit):
                 f"## Source content\n{state.get('source_content','')[:60000]}"
             )
         )
-        structured = self._llm.with_structured_output(IngestPlan)
-        plan = await structured.ainvoke([system, user])
-        return {"plan": plan}
+        # json_schema mode skips tool use entirely; the model emits JSON directly,
+        # which avoids the nested-stringification failure mode that tool-call args hit.
+        structured = self._llm.with_structured_output(IngestPlan, method="json_schema", include_raw=True)
+        result = await structured.ainvoke([system, user])
+        plan = _extract_plan(result)
+        if plan is not None:
+            return {"plan": plan}
+
+        # One retry: feed the parse error back so the model can self-correct.
+        parsing_error = result.get("parsing_error") if isinstance(result, dict) else None
+        logger.warning("plan parse failed on attempt 1, retrying with error feedback: %r", parsing_error)
+        retry_system = SystemMessage(
+            content=(
+                system.content
+                + "\n\nYour previous response could not be parsed. Parse error:\n"
+                + repr(parsing_error)
+                + "\n\nProduce the SAME plan again, but this time double-check that"
+                " `page_updates` is a real JSON array of objects (not a string),"
+                " and that every string field is properly escaped."
+            )
+        )
+        retry = await structured.ainvoke([retry_system, user])
+        plan = _extract_plan(retry)
+        if plan is not None:
+            logger.info("plan parsed on retry")
+            return {"plan": plan}
+
+        await asyncio.to_thread(self._dump_failed_plan, retry)
+        err = retry.get("parsing_error") if isinstance(retry, dict) else None
+        raise RuntimeError(
+            "plan node failed both attempts; raw response dumped to wiki/.debug/last_plan_failure.json"
+        ) from err
+
+    def _dump_failed_plan(self, result: Any) -> None:
+        debug_dir = self.config.wiki_dir / ".debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        path = debug_dir / "last_plan_failure.json"
+        raw = result.get("raw") if isinstance(result, dict) else None
+        snapshot = {
+            "parsing_error": repr(result.get("parsing_error")) if isinstance(result, dict) else None,
+            "raw_content": getattr(raw, "content", None),
+            "raw_tool_calls": getattr(raw, "tool_calls", None),
+        }
+        path.write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")
+        logger.error("plan failure dumped to %s", path)
 
     async def _node_apply(self, state: WikiState) -> dict[str, Any]:
         plan: IngestPlan = state["plan"]
@@ -167,7 +230,10 @@ class WikiMaintainer(WorkingUnit):
     def _apply_sync(self, plan: IngestPlan) -> list[str]:
         applied: list[str] = []
         for upd in plan.page_updates:
-            rel = upd.path.lstrip("/")
+            rel = upd.path.strip().lstrip("/")
+            if not rel.endswith(".md") or "\n" in rel:
+                logger.warning("rejected non-markdown or malformed path: %r", upd.path)
+                continue
             target = (self.config.wiki_dir / rel).resolve()
             try:
                 target.relative_to(self.config.wiki_dir.resolve())
