@@ -1,27 +1,60 @@
 # Index
 
 ## concepts
+- [Appreciating Diverse Working Styles](concepts/appreciating-diverse-working-styles.md)
+- [Concrete Communication for Mediators](concepts/concrete-communication-for-mediators.md)
+- [Facing Conflict](concepts/facing-conflict.md)
 - [Growth Mindset vs. Fixed Mindset](concepts/growth-mindset-vs-fixed-mindset.md)
+- [Helpful Accountability](concepts/helpful-accountability.md)
+- [Helplessness](concepts/helplessness.md)
 - [Humanistic Relevancy](concepts/humanistic-relevancy.md)
+- [Humbly Genuine](concepts/humbly-genuine.md)
+- [Hypersensitivity to Criticism](concepts/hypersensitivity-to-criticism.md)
 - [Idealism as Strength and Pitfall](concepts/idealism-as-strength-and-pitfall.md)
+- [Infectious Positivity](concepts/infectious-positivity.md)
 - [Intuitive Learning](concepts/intuitive-learning.md)
 - [Lifelong Learning](concepts/lifelong-learning.md)
+- [Naïveté](concepts/naivete.md)
 - [People-Pleasing Pitfall](concepts/people-pleasing-pitfall.md)
+- [Reassessing Praise and Criticism](concepts/reassessing-feedback.md)
+- [Second-Guessing](concepts/second-guessing.md)
+- [Second Opinions](concepts/second-opinions.md)
+- [Slowing Down](concepts/slowing-down.md)
+- [Solidifying the Abstract](concepts/solidifying-the-abstract.md)
+- [Need for Solitude](concepts/solitude-necessity.md)
 - [Suitable Careers for Mediators](concepts/suitable-careers-for-mediators.md)
 - [Work or College Decision Framework](concepts/work-or-college-decision-framework.md)
 
 ## entities
 - [Carol Dweck](entities/carol-dweck.md)
 - [Creative Arts (Career Field)](entities/creative-arts.md)
+- [Education (Career Field)](entities/education-field.md)
+- [Explorer Personality Type](entities/explorer-personality-type.md)
+- [Health Care (Career Field)](entities/health-care.md)
 - [INFP / Mediator](entities/infp-mediator.md)
+- [Professional Volunteerism (Career Field)](entities/professional-volunteerism.md)
+- [Public Service and Social Work (Career Field)](entities/public-service-and-social-work.md)
+- [Self-Employment (Career Field)](entities/self-employment.md)
+- [Service Industry (Career Field)](entities/service-industry.md)
 
 ## parts
-- [Part: Academic Path](parts/academic-path.md)
-- [Part: Professional Development](parts/professional-development.md)
+- [Academic Path](parts/academic-path.md)
+- [Professional Development](parts/professional-development.md)
 
 ## root
 - [Overview: Mediator Guide to Careers](overview.md)
 
 ## sources
+- [Source: Calls to Action – So… What’s Next?](sources/calls-to-action-to-whats-next.md)
+- [Caring or Naïve? — Second Opinions](sources/caring-or-naive-to-second-opinions.md)
+- [Source: Creating Alone Time to Hiding Hurt Feelings](sources/creating-alone-time-to-hiding-hurt-feelings.md)
+- [Source: Creative Arts to Helpful Accountability](sources/creative-arts-to-helpful-accountability.md)
+- [Facts Thrive with Context to Appealing Only to Instinct](sources/facts-thrive-to-appealing-to-instinct.md)
+- [Source: Hypersensitive to Criticism -> Facing Conflict](sources/hypersensitive-criticism-to-facing-conflict.md)
+- [Source: INTP Detailed Profile (Chinese)](sources/intp-profile-chinese.md)
+- [Mediator College Advice: Selecting for Others to Humbly Genuine](sources/mediator-college-advice.md)
 - [Source: Mediator Guide to Careers](sources/mediator-guide-to-careers.md)
 - [Source: Sample Chapter — The Locked Door](sources/sample-the-locked-door.md)
+- [Slow It Down → Second-Guessing](sources/slow-it-down-to-second-guessing.md)
+- [Source: Solidifying the Abstract](sources/solidifying-the-abstract.md)
+- [Source: Tempered Idealism to Restless Hearts](sources/tempered-idealism-to-restless-hearts.md)

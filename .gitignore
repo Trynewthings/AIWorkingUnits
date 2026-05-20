@@ -220,3 +220,10 @@ __marimo__/
 # Wiki content uses parts/ for book sections — override Python template
 !wiki/parts/
 !wiki/parts/**
+
+# LangGraph dev server cache and debug artifacts
+.langgraph_api/
+wiki/.debug/
+
+# Obsidian sidecar (user-local editor metadata)
+wiki/.obsidian/

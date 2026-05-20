@@ -1,20 +1,14 @@
 # Growth Mindset vs. Fixed Mindset
 
 ## Definition
-A framework developed by psychologist [Carol Dweck](../entities/carol-dweck.md) distinguishing two orientations toward ability and learning:
-
-- **Fixed Mindset**: The belief that intelligence and talent are innate and static. Individuals avoid failure (or success) because either could "disprove" their self-concept as naturally gifted. Reframing "can't" as "not yet" is the first corrective step.
-- **Growth Mindset**: The belief that abilities can be developed through effort, strategy, and learning from failure. Embracing failure as information rather than verdict.
-
-Mediator-specific relevance: Mediators are particularly prone to fixed mindset because they are often identified as gifted early in life. When natural talent stops being sufficient (typically in high school), they may blame themselves rather than recognizing the need to develop new habits.
+The belief that abilities can be developed through effort (growth) versus the belief that they are innate (fixed). Mediators often underestimate their capacity to develop skills in areas they find uninteresting.
 
 ## Evidence
-- Introduced in the "Developing a Growth Mindset" subsection of "Mediators in High School."
-- The guide provides a step-by-step exercise for embracing failure: identify a failure → reframe as opportunity → gather improvement information → ask for help setting expectations → consciously accept lessons.
-- Fixed mindset manifests as: aversion to risking failure, self-blame for not being "smart enough," and withdrawal from challenging subjects.
+- Mediators typically have trouble concentrating on non-personal priorities, but they can learn to focus with time and effort. [Source: Tempered Idealism to Restless Hearts](../sources/tempered-idealism-to-restless-hearts.md)
+- Developing focus on undesirable tasks is a skill; "homing in on even undesirable tasks is easy" once the ability is built. [ibid]
 
-> source: [sources/mediator-guide-to-careers.md](../sources/mediator-guide-to-careers.md)
+## Application
+- Mediators should view boring but necessary learning as an opportunity to grow their mental discipline, rather than a fixed limitation.
 
 ## Open questions
-- How does the growth mindset framework interact with Mediators' Feeling preference — does emotional processing of failure help or hinder adoption of a growth mindset?
-- Is the fixed mindset risk higher for Mediators than for other Diplomat types (ENFP, INFJ, ENFJ)?
+- Does the Mediator's intuitive, value-driven nature make sustaining a growth mindset in disliked areas particularly challenging?

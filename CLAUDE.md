@@ -16,12 +16,13 @@ retargeted at a similar task.
 
 The **first concrete application** built on top is the **LLM Wiki**
 pattern (idea attribution and rationale in the LLM Wiki section below).
-Right now there are two units in service of that:
+The units in service of that:
 
 | Unit | File | Capabilities |
 |---|---|---|
 | `SourceSplitter` | `src/aiworkingunits/units/source_splitter.py` | `source.split` — PDF (TOC-aware) or markdown → list of chapter-sized chunks, greedy-packed to `target_chapter_chars` |
-| `WikiMaintainer` | `src/aiworkingunits/units/wiki_maintainer.py` | `wiki.ingest` (LangGraph: load_context → plan → apply → update_index_and_log), `wiki.query` |
+| `WikiMaintainer` | `src/aiworkingunits/units/wiki_maintainer.py` | `wiki.ingest`, `wiki.query`, `wiki.repair` (deterministic fixers for `missing_h1`, `broken_link`; suggest/apply modes; per-issue-type policies) |
+| `WikiLinter` | `src/aiworkingunits/units/wiki_linter.py` | `wiki.lint` — deterministic structural checks (broken links, placeholder text, stub pages, orphan pages, missing H1). Can dispatch found issues to a `wiki.repair`-capable unit via the bus for closed-loop self-repair. |
 | `SourceFetcher` | `src/aiworkingunits/units/source_fetcher.py` | `source.fetch` — read raw file as markdown (PDF via pymupdf4llm); kept around for direct single-file ingest demos |
 
 Bus + ABC live in `src/aiworkingunits/{bus,unit,messages,observability}.py`.

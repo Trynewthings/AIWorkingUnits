@@ -1,26 +1,22 @@
-# Part: Academic Path
+# Academic Path
 
 ## Setting
-The first major section of the *Mediator Guide to Careers*, covering Mediators' relationship with formal and informal education from high school through lifelong learning.
+The Academic Path covers the Mediator's journey through education, from early schooling to lifelong learning, emphasizing the need for balance between idealism and practical engagement.
 
-## Events
-- **How Mediators Learn** — Introduces intuitive learning style; balanced vs. unbalanced habits; rebalancing strategies (solidifying the abstract, using mnemonics, contextualizing facts).
-- **Mediators in High School** — Balanced (curious/idealistic, making mundane interesting) vs. unbalanced (uneven attention, over-reliance on intuition) approaches; rebalancing via personal paths and growth mindset.
-- **Work or College?** — Decision framework for post-high-school choices; balanced (practicality + values) vs. unbalanced (appealing only to instinct, selecting for others); rebalancing via self-reflective questions.
-- **Mediators in College** — Expanded freedom suits Mediators; balanced (right courses, right motivation) vs. unbalanced (neglecting prerequisites, rushing to conclusions, stubbornness); rebalancing via "prerequisites as self-help" and improv "Yes, and…" technique.
-- **Lifelong Learning** — Tempered idealism, work/play balance; unbalanced patterns (only idealism, indulgent learning); rebalancing via research-before-committing and creative planning exercises.
-- **Conclusion** — Balance and imbalance are cyclical states; growth is ongoing.
+## Key Inserts from Tempered Idealism
+- **Tempered Idealism**: Mediators must reign in their idealism to avoid disappointment and inaction; use research to verify interests.
+- **Work and Play**: Learn to focus on boring but necessary tasks; view them as a means to build valuable skills.
+- **Only Idealism**: Overthinking and lacking a clear starting point prevents action; correlation without causation is a trap.
+- **Indulgent Learning**: Learning only what brings joy creates knowledge deficits; balance joy with necessity.
+- **Research and Idealism**: Before committing to a course, research its logistics, instructor, cost, and feedback to align with true fit.
+- **A Creative Plan**: Use a daily visualization and 10-step planning exercise to bridge dreams and reality.
+- **Life Is Learning**: Embrace education as a connection to the world; balance passion with realistic expectations.
 
 ## Notable passages
-> "For Mediators, balancing their passion and soft hearts with practical and realistic expectations is quite achievable and even more satisfying."
+> "Mediators are masters of correlation – they see that everything fits together – but are not always equally good at causation – understanding where things start and end."
 
-> "The challenge for these types isn't so much in the hard work of learning – the challenge is managing their imaginations and finding a reasonable footing so that education is a rewarding experience."
-
-> "Mediators often don't know why they know things. Ideas and vague notions of how to navigate themselves academically seem to appear out of thin air."
-
-## Entities introduced
-- [INFP / Mediator](../entities/infp-mediator.md)
-- [Carol Dweck](../entities/carol-dweck.md)
-- [Katherine Johnson](../entities/katherine-johnson.md)
-
-> source: [sources/mediator-guide-to-careers.md](../sources/mediator-guide-to-careers.md)
+## Related Concepts
+- [Idealism as Strength and Pitfall](../concepts/idealism-as-strength-and-pitfall.md)
+- [Solidifying the Abstract](../concepts/solidifying-the-abstract.md)
+- [Lifelong Learning](../concepts/lifelong-learning.md)
+- [Work or College Decision Framework](../concepts/work-or-college-decision-framework.md)

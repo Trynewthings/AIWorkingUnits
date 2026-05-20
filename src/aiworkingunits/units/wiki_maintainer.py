@@ -35,6 +35,10 @@ class WikiMaintainerConfig(UnitConfig):
     wiki_dir: Path = Path("wiki")
     schema_path: Path = Path("schemas/book_wiki.md")
     max_pages_per_ingest: int = 15
+    # Total character budget for the existing-wiki snapshot fed into plan.
+    # Defends against runaway prompts as the wiki grows; pages are included
+    # whole-or-not (no mid-page truncation) until the budget is exhausted.
+    wiki_snapshot_char_budget: int = 60000
 
     # LLM provider config. The base UnitConfig.model field is used as the query
     # model; plan_model (if set) is used for the more demanding ingest plan.
@@ -125,6 +129,7 @@ class WikiState(TypedDict, total=False):
     source_content: str
     schema_doc: str
     index_doc: str
+    wiki_snapshot: str
     plan: IngestPlan
     applied: list[str]
 
@@ -197,6 +202,9 @@ class WikiMaintainer(WorkingUnit):
             config = run_config_from_message(msg, unit_id=self.unit_id, run_name=f"{self.unit_id}.query")
             answer = await self._query(msg.payload.get("question", ""), config)
             return msg.reply(payload={"answer": answer}, sender=self.unit_id)
+        if cap == "wiki.repair":
+            result = await asyncio.to_thread(self._repair, msg.payload)
+            return msg.reply(payload=result, sender=self.unit_id)
         return None
 
     async def _ingest(self, payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -235,17 +243,53 @@ class WikiMaintainer(WorkingUnit):
         return graph.compile()
 
     async def _node_load_context(self, state: WikiState) -> dict[str, Any]:
-        def _read() -> tuple[str, str]:
-            return self._read_text(self.config.schema_path), self._read_index()
+        def _read() -> tuple[str, str, str]:
+            return (
+                self._read_text(self.config.schema_path),
+                self._read_index(),
+                self._read_wiki_snapshot(),
+            )
 
-        schema, index = await asyncio.to_thread(_read)
-        return {"schema_doc": schema, "index_doc": index}
+        schema, index, snapshot = await asyncio.to_thread(_read)
+        return {"schema_doc": schema, "index_doc": index, "wiki_snapshot": snapshot}
+
+    def _read_wiki_snapshot(self) -> str:
+        """Concatenate existing wiki pages (except index/log) into one string.
+
+        Pages are included whole, never mid-page-truncated, until the configured
+        char budget is exhausted. This gives the plan node the actual current
+        content of pages it may update, preventing the LLM from emitting
+        '(existing content here)' placeholders for sections it doesn't intend
+        to change.
+        """
+        budget = self.config.wiki_snapshot_char_budget
+        if budget <= 0:
+            return "(snapshot disabled)"
+        chunks: list[str] = []
+        used = 0
+        omitted = 0
+        for p in sorted(self.config.wiki_dir.rglob("*.md")):
+            rel = p.relative_to(self.config.wiki_dir).as_posix()
+            if rel in {"index.md", "log.md"} or rel.startswith(".debug/"):
+                continue
+            body = p.read_text(encoding="utf-8")
+            block = f"\n\n----- BEGIN PAGE: {rel} -----\n{body.rstrip()}\n----- END PAGE: {rel} -----"
+            if used + len(block) > budget:
+                omitted += 1
+                continue
+            chunks.append(block)
+            used += len(block)
+        if not chunks:
+            return "(no existing pages)"
+        header = f"({len(chunks)} pages included, {omitted} omitted due to budget)\n"
+        return header + "".join(chunks)
 
     async def _node_plan(self, state: WikiState) -> dict[str, Any]:
         system = SystemMessage(
             content=(
                 "You are the maintainer of a personal wiki built from sources."
-                " You are given the wiki schema, the current index, and a new source."
+                " You are given the wiki schema, the current index, the FULL CURRENT"
+                " CONTENT of existing pages, and a new source."
                 " Produce a plan that integrates the source into the wiki."
                 " Update existing pages when possible; create new pages when needed."
                 f" Limit yourself to at most {self.config.max_pages_per_ingest} page updates.\n\n"
@@ -258,6 +302,16 @@ class WikiMaintainer(WorkingUnit):
                 "- One of the page_updates MUST be the source summary page at"
                 " `sources/<slug>.md` — that page lives inside page_updates,"
                 " NOT in the synopsis field.\n\n"
+                "CRITICAL RULE FOR action=update (this is how pages get silently destroyed):\n"
+                "- `update` overwrites the entire page. You MUST output the COMPLETE new"
+                " page body, including verbatim any sections you do not intend to change.\n"
+                "- The existing page content is provided to you below — copy unchanged"
+                " sections into your output exactly as written.\n"
+                "- NEVER use placeholders like '(existing content here)', '(unchanged)',"
+                " '(see previous)', or '...' — they will be written to disk literally"
+                " and destroy real content.\n"
+                "- If you only want to add to a page without rewriting it, use"
+                " `action=append` instead — that concatenates a new section to the end\n\n"
                 "Inside each `content` field, write plain markdown with real newlines."
                 " Do not pre-escape newlines, quotes, or backslashes — the tool layer"
                 " escapes them for you. Keep each `content` self-contained for one page."
@@ -267,6 +321,7 @@ class WikiMaintainer(WorkingUnit):
             content=(
                 f"# Wiki schema\n{state.get('schema_doc','')}\n\n"
                 f"# Current index\n{state.get('index_doc','(empty)')}\n\n"
+                f"# Existing pages (full content)\n{state.get('wiki_snapshot','(none)')}\n\n"
                 f"# New source: {state.get('source_title','')}\n"
                 f"Path (in raw): {state.get('source_path','')}\n\n"
                 f"## Source content\n{state.get('source_content','')[:60000]}"
@@ -348,6 +403,163 @@ class WikiMaintainer(WorkingUnit):
             applied.append(rel)
         return applied
 
+    # Default repair policies. `broken_link` defaults to skip because removing
+    # a dead link is a real choice (user may instead want to create the missing
+    # page). Caller can opt in by passing policies={"broken_link": "fix"}.
+    _REPAIR_DEFAULTS: dict[str, str] = {
+        "missing_h1": "fix",
+        "broken_link": "skip",
+        "orphan_page": "skip",
+        "placeholder_text": "skip",
+        "stub_page": "skip",
+    }
+
+    # Inline copy of the markdown-link regex (shared shape with WikiLinter).
+    # Kept local to avoid cross-unit imports between sibling units.
+    _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s#]+(?:#[^)\s]+)?)\)")
+
+    def _repair(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Apply (or suggest) deterministic fixes for a list of lint issues.
+
+        payload:
+          - issues: list of lint-issue dicts (see WikiLinter.LintIssue)
+          - mode: "suggest" (default) → return proposals without writing
+                  "apply" → write changes to disk
+          - policies: dict[issue_type, "fix" | "skip"] — overrides defaults
+
+        Returns: {proposals: [...], summary: {considered, fixed, skipped, errors}}
+        """
+        issues: list[dict[str, Any]] = list(payload.get("issues", []))
+        mode = payload.get("mode", "suggest")
+        if mode not in {"suggest", "apply"}:
+            raise ValueError(f"unsupported repair mode: {mode!r}")
+        policies = dict(self._REPAIR_DEFAULTS)
+        policies.update(payload.get("policies") or {})
+
+        # Group enabled issues by path so each file is read and written at most once.
+        by_path: dict[str, list[dict[str, Any]]] = {}
+        skipped: list[dict[str, Any]] = []
+        for issue in issues:
+            itype = issue.get("type", "")
+            ipath = issue.get("path", "")
+            if policies.get(itype, "skip") != "fix":
+                skipped.append({**issue, "reason": f"policy={policies.get(itype, 'skip')}"})
+                continue
+            if itype not in {"missing_h1", "broken_link"}:
+                # Recognized policy=fix but no fixer implemented yet.
+                skipped.append({**issue, "reason": "no fixer implemented for this issue type"})
+                continue
+            by_path.setdefault(ipath, []).append(issue)
+
+        proposals: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for rel, page_issues in by_path.items():
+            try:
+                proposals.extend(self._repair_one_page(rel, page_issues, mode))
+            except Exception as e:
+                logger.exception("repair failed for %s", rel)
+                errors.append({"path": rel, "error": str(e), "error_type": type(e).__name__})
+
+        fixed = sum(1 for p in proposals if p.get("applied") or mode == "suggest" and p.get("would_change"))
+        return {
+            "proposals": proposals,
+            "skipped": skipped,
+            "summary": {
+                "considered": len(issues),
+                "fixed": fixed if mode == "apply" else 0,
+                "proposed": sum(1 for p in proposals if p.get("would_change")) if mode == "suggest" else 0,
+                "skipped": len(skipped),
+                "errors": len(errors),
+            },
+            "errors": errors,
+            "mode": mode,
+        }
+
+    def _repair_one_page(
+        self, rel: str, page_issues: list[dict[str, Any]], mode: str
+    ) -> list[dict[str, Any]]:
+        rel_clean = rel.strip().lstrip("/")
+        if not rel_clean.endswith(".md") or "\n" in rel_clean:
+            return [{"path": rel, "applied": False, "would_change": False,
+                     "reason": "malformed path", "issue_types": [i["type"] for i in page_issues]}]
+        target = (self.config.wiki_dir / rel_clean).resolve()
+        try:
+            target.relative_to(self.config.wiki_dir.resolve())
+        except ValueError:
+            return [{"path": rel, "applied": False, "would_change": False,
+                     "reason": "path escapes wiki_dir", "issue_types": [i["type"] for i in page_issues]}]
+        if not target.exists():
+            return [{"path": rel, "applied": False, "would_change": False,
+                     "reason": "page no longer exists"}]
+
+        original = target.read_text(encoding="utf-8")
+        new_content = original
+        actions: list[dict[str, Any]] = []
+
+        # Run fixers in a deterministic order: structural first, then content.
+        if any(i["type"] == "missing_h1" for i in page_issues):
+            new_content, info = self._fix_missing_h1(rel_clean, new_content)
+            if info:
+                actions.append(info)
+        if any(i["type"] == "broken_link" for i in page_issues):
+            new_content, info = self._fix_broken_links(rel_clean, new_content)
+            if info:
+                actions.append(info)
+
+        would_change = new_content != original
+        applied = False
+        if would_change and mode == "apply":
+            target.write_text(new_content, encoding="utf-8")
+            applied = True
+        return [{
+            "path": rel_clean,
+            "actions": actions,
+            "would_change": would_change,
+            "applied": applied,
+            "before_excerpt": original[:200],
+            "after_excerpt": new_content[:200],
+        }]
+
+    def _fix_missing_h1(self, rel: str, body: str) -> tuple[str, dict[str, Any] | None]:
+        if body.lstrip().startswith("# "):
+            return body, None  # false positive — page already has H1
+        title = self._title_from_path(rel)
+        new = f"# {title}\n\n" + body.lstrip()
+        return new, {"action": "prepend_h1", "title": title}
+
+    def _fix_broken_links(self, rel: str, body: str) -> tuple[str, dict[str, Any] | None]:
+        wiki_root = self.config.wiki_dir.resolve()
+        page_dir = (self.config.wiki_dir / rel).resolve().parent
+        removed: list[dict[str, str]] = []
+
+        def _replacer(match: re.Match[str]) -> str:
+            text, target = match.group(1), match.group(2).split("#", 1)[0]
+            if not target or target.startswith(("http://", "https://", "mailto:", "ftp://")):
+                return match.group(0)
+            if not target.endswith(".md"):
+                return match.group(0)
+            try:
+                resolved = (page_dir / target).resolve()
+                resolved.relative_to(wiki_root)
+            except (ValueError, OSError):
+                removed.append({"text": text, "target": target, "reason": "escapes wiki_dir"})
+                return text
+            if resolved.exists():
+                return match.group(0)
+            removed.append({"text": text, "target": target, "reason": "target does not exist"})
+            return text
+
+        new_body = self._LINK_RE.sub(_replacer, body)
+        if not removed:
+            return body, None
+        return new_body, {"action": "delinkify", "removed": removed}
+
+    @staticmethod
+    def _title_from_path(rel: str) -> str:
+        stem = Path(rel).stem
+        return " ".join(part.capitalize() for part in stem.replace("_", "-").split("-") if part)
+
     async def _node_index_and_log(self, state: WikiState) -> dict[str, Any]:
         await asyncio.to_thread(self._index_and_log_sync, state)
         return {}
@@ -417,7 +629,7 @@ def make_maintainer(
 ) -> WikiMaintainer:
     cfg = WikiMaintainerConfig(
         unit_id=unit_id,
-        capabilities=["wiki.ingest", "wiki.query"],
+        capabilities=["wiki.ingest", "wiki.query", "wiki.repair"],
         wiki_dir=Path(wiki_dir),
         schema_path=Path(schema_path),
         model=model,

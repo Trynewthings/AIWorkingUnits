@@ -1,19 +1,14 @@
 # Intuitive Learning
 
 ## Definition
-Intuitive learning is the Mediator's natural cognitive style: subconsciously absorbing information and connecting subtle patterns without conscious awareness of the process. Mediators often "just know" answers — such as how to write a well-structured essay without an outline — because their subconscious has already synthesized the relevant patterns. They typically work backwards from conclusions to details, rather than building up from fundamentals step by step.
-
-This style enables rapid grasp of abstract concepts and enthusiastic self-directed learning outside the classroom, but conflicts with conventional educational systems that reward demonstrated, step-by-step mastery of concrete details.
+The Mediator's natural learning style that relies on seeing the big picture and making connections (correlation) but often struggles with linear, step-by-step processes (causation).
 
 ## Evidence
-- Described in detail in the "How Mediators Learn" section of the Academic Path.
-- Contrasted with conventional linear learning (variable "a" → "b" → "c") which Mediators use only as a springboard.
-- Rebalancing strategy: "deconstructing the intuitive" — writing an essay first, then analyzing its anatomy to understand the process retrospectively.
-- Solidifying abstractions through verbalization or writing is recommended as a key rebalancing tool.
+- Mediators are "masters of correlation" but not always good at causation; they may have no idea where to start. [Source: Tempered Idealism to Restless Hearts](../sources/tempered-idealism-to-restless-hearts.md)
+- They tend to skip from initial idea to final vision without filling in intermediate steps, leading to confusion. [ibid]
 
-> source: [sources/mediator-guide-to-careers.md](../sources/mediator-guide-to-careers.md)
+## Strategy
+- Creative Planning: go back and build a well-researched timeline starting with fundamentals. (see [Solidifying the Abstract](../concepts/solidifying-the-abstract.md))
 
 ## Open questions
-- How does intuitive learning interact with highly technical professional fields (e.g., medicine, engineering)?
-- Can intuitive learning be systematically trained or only managed/channeled?
-- At what point does intuitive learning become a liability in advanced academic or professional settings?
+- How can Mediators leverage their correlation strength in fields that require linear thinking?

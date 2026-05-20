@@ -1,26 +1,16 @@
 # Lifelong Learning
 
 ## Definition
-Lifelong learning refers to the ongoing pursuit of knowledge and personal development beyond formal schooling. For Mediators, it is a natural extension of their curiosity and idealism — they are drawn to learning throughout their lives, motivated by adventure, inspiration, culture, personal growth, and the joy of discovery.
-
-However, lifelong learning for Mediators carries specific risks:
-- **Over-idealism**: Excitement about a new subject leads to overthinking and talking oneself out of starting before even trying.
-- **Indulgent learning**: Focusing only on personally interesting topics while neglecting necessary skills, creating professional knowledge gaps.
-- **Correlation without causation**: Seeing how everything connects but lacking a clear starting point for action.
-
-**Rebalancing strategies:**
-- Temper idealism with research before committing (check logistics: time, cost, instructor quality, scheduling conflicts)
-- Develop a creative plan: visualize what brings happiness, set a small goal achievable within a week, list 10 steps, write an ideal vision statement
-- "Ruminate less, implement more"
-- Use the Prospecting trait to explore interests, but research thoroughly before full commitment
+The Mediator's innate love for learning, driven by curiosity and the joy of discovery. It is an expression of their personality but requires balance to avoid gaps in essential knowledge.
 
 ## Evidence
-- Covered in the "Lifelong Learning" subsection of the Academic Path.
-- The guide notes older Mediators who have embraced themselves fully are better able to give the benefit of the doubt to previously dismissed areas of study.
-- Example: learning Japanese — begins with cultural interest (online friend from Japan), sustained by meaningful personal goal (visiting Japan one day).
+- "Learning is something that’s innately valuable and should feel joyous." [Source: Tempered Idealism to Restless Hearts](../sources/tempered-idealism-to-restless-hearts.md)
+- "Indulgent learning" – focusing only on interests – can lead to huge knowledge deficits, harming professional development (e.g., neglecting technical writing basics). [ibid]
+- Mediators can learn to focus on uninteresting tasks; developing focus is a skill that needs practice. [ibid]
 
-> source: [sources/mediator-guide-to-careers.md](../sources/mediator-guide-to-careers.md)
+## Balance
+- Recognize the value of mundane or technical subjects for long-term enrichment.
+- Use research and planning to integrate necessary skills with personal passions.
 
 ## Open questions
-- How does lifelong learning interact with professional development — can informal learning substitute for formal credentials in Mediator-friendly fields?
-- At what point does broad curiosity become a liability (too many interests, no depth)?
+- How can Mediators find the "art" in every subject to make learning more engaging?
