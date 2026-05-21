@@ -39,6 +39,9 @@ class WikiMaintainerConfig(UnitConfig):
     # Defends against runaway prompts as the wiki grows; pages are included
     # whole-or-not (no mid-page truncation) until the budget is exhausted.
     wiki_snapshot_char_budget: int = 60000
+    # Maximum number of wiki pages the query graph will read into the answer
+    # context. Selecting more rarely improves quality and burns tokens.
+    query_max_pages: int = 5
 
     # LLM provider config. The base UnitConfig.model field is used as the query
     # model; plan_model (if set) is used for the more demanding ingest plan.
@@ -134,6 +137,30 @@ class WikiState(TypedDict, total=False):
     applied: list[str]
 
 
+class QuerySelection(BaseModel):
+    """Plan output of the query graph's selection step."""
+
+    selected_pages: list[str] = Field(
+        description=(
+            "Relative paths (from wiki_dir) of the 2-5 wiki pages most likely to"
+            " contain the answer. Only return paths that appear verbatim in the index."
+        )
+    )
+    reasoning: str = Field(
+        default="",
+        description="One sentence explaining the selection — used for transparency, not displayed to end users.",
+    )
+
+
+class WikiQueryState(TypedDict, total=False):
+    question: str
+    index_doc: str
+    selection: QuerySelection
+    page_bodies: dict[str, str]
+    cited_pages: list[str]
+    answer: str
+
+
 def _extract_plan(result: Any) -> IngestPlan | None:
     if isinstance(result, IngestPlan):
         return result
@@ -144,12 +171,27 @@ def _extract_plan(result: Any) -> IngestPlan | None:
     return None
 
 
+def _extract_selection(result: Any) -> QuerySelection | None:
+    if isinstance(result, QuerySelection):
+        return result
+    if isinstance(result, dict):
+        parsed = result.get("parsed")
+        if isinstance(parsed, QuerySelection):
+            return parsed
+    return None
+
+
 class WikiMaintainer(WorkingUnit):
     """Owns a wiki directory. Ingests sources via a LangGraph pipeline.
 
     Capabilities:
       - "wiki.ingest": payload {"source_path", "title", "content"}
-      - "wiki.query": payload {"question"}  (simple v1: read index + cite pages)
+      - "wiki.query":  payload {"question"} →
+            {"answer": str, "cited_pages": list[str], "reasoning": str}
+        Two-phase: select 2-5 most-relevant pages from the index, read their
+        full content, then answer using only that content (no chunking, no
+        retrieval — the synthesis was already done at ingest time).
+      - "wiki.repair": payload {"issues", "mode", "policies"} — see _repair
     """
 
     config_cls = WikiMaintainerConfig
@@ -161,6 +203,7 @@ class WikiMaintainer(WorkingUnit):
         self._llm_query = self._build_llm(config.model)
         self._llm_plan = self._build_llm(config.plan_model) if config.plan_model else self._llm_query
         self._graph = self._build_graph()
+        self._query_graph = self._build_query_graph()
 
     def _build_llm(self, model: str) -> BaseChatModel:
         provider = self.config.llm_provider
@@ -200,8 +243,8 @@ class WikiMaintainer(WorkingUnit):
             return msg.reply(payload=result, sender=self.unit_id)
         if cap == "wiki.query":
             config = run_config_from_message(msg, unit_id=self.unit_id, run_name=f"{self.unit_id}.query")
-            answer = await self._query(msg.payload.get("question", ""), config)
-            return msg.reply(payload={"answer": answer}, sender=self.unit_id)
+            result = await self._query(msg.payload.get("question", ""), config)
+            return msg.reply(payload=result, sender=self.unit_id)
         if cap == "wiki.repair":
             result = await asyncio.to_thread(self._repair, msg.payload)
             return msg.reply(payload=result, sender=self.unit_id)
@@ -219,15 +262,133 @@ class WikiMaintainer(WorkingUnit):
             "summary": final_state.get("plan").synopsis if final_state.get("plan") else "",
         }
 
-    async def _query(self, question: str, config: dict[str, Any]) -> str:
+    async def _query(self, question: str, config: dict[str, Any]) -> dict[str, Any]:
+        if not question.strip():
+            return {"answer": "(empty question)", "cited_pages": [], "reasoning": ""}
+        state: WikiQueryState = {"question": question.strip()}
+        final = await self._query_graph.ainvoke(state, config=config)
+        return {
+            "answer": final.get("answer", ""),
+            "cited_pages": final.get("cited_pages", []),
+            "reasoning": final.get("selection").reasoning if final.get("selection") else "",
+        }
+
+    def _build_query_graph(self) -> Any:
+        graph: StateGraph = StateGraph(WikiQueryState)
+        graph.add_node("load_index", self._qnode_load_index)
+        graph.add_node("select_pages", self._qnode_select_pages)
+        graph.add_node("read_pages", self._qnode_read_pages)
+        graph.add_node("answer", self._qnode_answer)
+        graph.add_edge(START, "load_index")
+        graph.add_edge("load_index", "select_pages")
+        graph.add_edge("select_pages", "read_pages")
+        graph.add_edge("read_pages", "answer")
+        graph.add_edge("answer", END)
+        return graph.compile()
+
+    async def _qnode_load_index(self, state: WikiQueryState) -> dict[str, Any]:
         index = await asyncio.to_thread(self._read_index)
-        prompt = (
-            "You are a wiki librarian. Use the index below to answer the question."
-            " Cite pages by their relative path.\n\n"
-            f"# Wiki Index\n{index}\n\n# Question\n{question}"
+        return {"index_doc": index}
+
+    async def _qnode_select_pages(self, state: WikiQueryState) -> dict[str, Any]:
+        system = SystemMessage(
+            content=(
+                "You are a wiki librarian. You read the index of an LLM-maintained"
+                " wiki and pick the small set of pages most likely to contain the"
+                " answer to a question. Respond as JSON matching the QuerySelection"
+                " schema with fields `selected_pages` (list of relative paths) and"
+                " `reasoning` (one sentence).\n\n"
+                f"Rules:\n"
+                f"- Return between 1 and {self.config.query_max_pages} page paths.\n"
+                "- Each path MUST appear verbatim in the index (copy-paste, do not invent).\n"
+                "- Prefer entity / concept / part pages over source-summary pages when"
+                " both could answer; source pages are mainly evidence trails.\n"
+                "- If the question is too broad, pick a small set of overview pages"
+                " (e.g. overview.md, index-like category pages).\n"
+                "- If the question is unanswerable from the index alone (e.g. asks"
+                " about content the wiki clearly does not cover), still return your"
+                " best 1-2 guesses so the answer node can confirm absence."
+            )
         )
-        result = await self._llm_query.ainvoke([HumanMessage(content=prompt)], config=config)
-        return str(result.content)
+        user = HumanMessage(
+            content=(
+                f"# Question\n{state['question']}\n\n"
+                f"# Wiki index\n{state.get('index_doc', '(empty)')}"
+            )
+        )
+        structured = self._llm_query.with_structured_output(
+            QuerySelection, method=self.config.structured_output_method, include_raw=True
+        )
+        result = await structured.ainvoke([system, user])
+        selection = _extract_selection(result)
+        if selection is None:
+            logger.warning("query select_pages: structured output failed, falling back to overview-only")
+            selection = QuerySelection(
+                selected_pages=["overview.md"], reasoning="fallback: selection parse failed"
+            )
+        return {"selection": selection}
+
+    async def _qnode_read_pages(self, state: WikiQueryState) -> dict[str, Any]:
+        selection = state.get("selection")
+        if selection is None:
+            return {"page_bodies": {}, "cited_pages": []}
+        chosen = list(selection.selected_pages)[: self.config.query_max_pages]
+        bodies = await asyncio.to_thread(self._read_selected_pages, chosen)
+        return {"page_bodies": bodies, "cited_pages": list(bodies.keys())}
+
+    def _read_selected_pages(self, paths: list[str]) -> dict[str, str]:
+        """Validate paths and load contents. Drops invalid/missing paths with a log line."""
+        wiki_root = self.config.wiki_dir.resolve()
+        out: dict[str, str] = {}
+        for raw in paths:
+            rel = raw.strip().lstrip("/")
+            if not rel.endswith(".md") or "\n" in rel or "\x00" in rel:
+                logger.warning("query: rejected non-markdown or malformed path %r", raw)
+                continue
+            target = (self.config.wiki_dir / rel).resolve()
+            try:
+                target.relative_to(wiki_root)
+            except ValueError:
+                logger.warning("query: rejected page outside wiki_dir: %s", rel)
+                continue
+            if not target.exists():
+                logger.warning("query: selector picked non-existent page: %s", rel)
+                continue
+            out[rel] = target.read_text(encoding="utf-8")
+        return out
+
+    async def _qnode_answer(self, state: WikiQueryState) -> dict[str, Any]:
+        bodies = state.get("page_bodies", {})
+        if not bodies:
+            return {
+                "answer": (
+                    "I could not find any wiki page that addresses this question."
+                    " (The selector returned no valid pages.) Consider rephrasing or"
+                    " ingesting a source that covers the topic."
+                )
+            }
+        joined = "\n\n".join(
+            f"## Page: {rel}\n{body.strip()}" for rel, body in bodies.items()
+        )
+        system = SystemMessage(
+            content=(
+                "You are answering a user's question using only the wiki pages provided."
+                " Rules:\n"
+                "- Answer in the same language as the question.\n"
+                "- Cite the pages you use inline as `(see <relative-path>)`.\n"
+                "- If the pages do not contain the answer, say so explicitly rather than"
+                " guessing. Suggest which kind of source the user would need to ingest.\n"
+                "- Be concise. Don't restate the question."
+            )
+        )
+        user = HumanMessage(
+            content=(
+                f"# Question\n{state['question']}\n\n"
+                f"# Relevant wiki pages\n{joined}"
+            )
+        )
+        result = await self._llm_query.ainvoke([system, user])
+        return {"answer": str(result.content)}
 
     def _build_graph(self) -> Any:
         graph: StateGraph = StateGraph(WikiState)

@@ -27,6 +27,9 @@ dev = [
     "langgraph-cli[inmem]>=0.1.55",
 ]
 
+[project.scripts]
+workunits = "aiworkingunits.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
